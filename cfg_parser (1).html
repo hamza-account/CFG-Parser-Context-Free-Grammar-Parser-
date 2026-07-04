@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CFG Parser — Arithmetic Expressions</title>
+<style>
+  /* ─── DESIGN TOKENS ─────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c27;
+    --surface2:  #1f2436;
+    --border:    #2a3050;
+    --accent:    #5b6ef5;
+    --accent2:   #7c8dff;
+    --text:      #e4e8ff;
+    --muted:     #7a82a8;
+    --success:   #2ecc8a;
+    --success-bg:#0d2e20;
+    --error:     #f05060;
+    --error-bg:  #2a1018;
+    --warn:      #f0a830;
+    --warn-bg:   #2a1e08;
+    --mono:      'Courier New', monospace;
+    --sans:      system-ui, -apple-system, sans-serif;
+    --radius:    10px;
+    --radius-lg: 16px;
+  }
+
+  /* ─── RESET & BASE ───────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  /* ─── LAYOUT ─────────────────────────────────────────────────────────────── */
+  .wrapper { max-width: 900px; margin: 0 auto; }
+
+  /* ─── HEADER ─────────────────────────────────────────────────────────────── */
+  header { margin-bottom: 2rem; }
+  .badge {
+    display: inline-block;
+    background: rgba(91,110,245,0.15);
+    color: var(--accent2);
+    border: 1px solid rgba(91,110,245,0.35);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: clamp(1.5rem, 4vw, 2.2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .subtitle { color: var(--muted); font-size: 14px; }
+
+  /* ─── GRAMMAR CARD ───────────────────────────────────────────────────────── */
+  .grammar-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .grammar-card h3 {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .rule { display: flex; flex-direction: column; gap: 4px; }
+  .rule-line {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    padding: 5px 10px;
+    background: var(--surface2);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent);
+  }
+  .rule-line .nt { color: var(--accent2); font-weight: 600; }
+  .rule-line .op { color: var(--warn); }
+  .rule-line .kw { color: var(--success); }
+
+  /* ─── INPUT SECTION ─────────────────────────────────────────────────────── */
+  .input-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .expr-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 18px;
+    padding: 12px 16px;
+    outline: none;
+    transition: border-color 0.2s;
+    letter-spacing: 0.04em;
+  }
+  .expr-input:focus { border-color: var(--accent); }
+  .expr-input::placeholder { color: var(--muted); font-size: 14px; letter-spacing: 0; }
+  .parse-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 0 24px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .parse-btn:hover { background: var(--accent2); }
+  .parse-btn:active { transform: scale(0.97); }
+  .clear-btn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    padding: 0 16px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .clear-btn:hover { color: var(--text); }
+
+  /* ─── TEST CASES ────────────────────────────────────────────────────────── */
+  .test-section { margin-bottom: 1.5rem; }
+  .test-section h3 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .test-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    border: 1px solid;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .chip:hover { opacity: 0.8; transform: scale(0.97); }
+  .chip.accept {
+    background: rgba(46,204,138,0.1);
+    color: var(--success);
+    border-color: rgba(46,204,138,0.3);
+  }
+  .chip.reject {
+    background: rgba(240,80,96,0.1);
+    color: var(--error);
+    border-color: rgba(240,80,96,0.3);
+  }
+
+  /* ─── RESULT PANEL ───────────────────────────────────────────────────────── */
+  #result-panel { display: none; }
+  .verdict {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: var(--radius-lg);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    font-size: 1.3rem;
+    font-weight: 700;
+    border: 1px solid;
+  }
+  .verdict.accepted {
+    background: var(--success-bg);
+    border-color: rgba(46,204,138,0.4);
+    color: var(--success);
+  }
+  .verdict.rejected {
+    background: var(--error-bg);
+    border-color: rgba(240,80,96,0.4);
+    color: var(--error);
+  }
+  .verdict-icon { font-size: 1.8rem; }
+  .verdict-detail { font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+  /* ─── STEPS ─────────────────────────────────────────────────────────────── */
+  .steps-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 640px) { .steps-grid { grid-template-columns: 1fr; } .grammar-card { grid-template-columns: 1fr; } }
+
+  .step-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+  }
+  .step-card h4 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .step-num {
+    width: 18px; height: 18px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .token-list { display: flex; flex-wrap: wrap; gap: 5px; }
+  .token {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    border: 1px solid;
+  }
+  .token.NUM    { background: rgba(91,110,245,0.15); color: var(--accent2); border-color: rgba(91,110,245,0.3); }
+  .token.PLUS   { background: rgba(46,204,138,0.12); color: var(--success); border-color: rgba(46,204,138,0.3); }
+  .token.MINUS  { background: rgba(46,204,138,0.12); color: var(--success); border-color: rgba(46,204,138,0.3); }
+  .token.TIMES  { background: rgba(240,168,48,0.12); color: var(--warn);    border-color: rgba(240,168,48,0.3); }
+  .token.DIV    { background: rgba(240,168,48,0.12); color: var(--warn);    border-color: rgba(240,168,48,0.3); }
+  .token.LPAREN { background: rgba(255,255,255,0.06); color: #ccc; border-color: #333; }
+  .token.RPAREN { background: rgba(255,255,255,0.06); color: #ccc; border-color: #333; }
+  .token.ERROR  { background: var(--error-bg); color: var(--error); border-color: rgba(240,80,96,0.4); }
+
+  .rule-log { list-style: none; max-height: 200px; overflow-y: auto; }
+  .rule-log li {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .rule-log li:last-child { border-bottom: none; }
+  .rule-log .rule-tag {
+    background: rgba(91,110,245,0.2);
+    color: var(--accent2);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+  .rule-log .rule-tag.F  { background: rgba(240,168,48,0.2);  color: var(--warn); }
+  .rule-log .rule-tag.T  { background: rgba(46,204,138,0.2);  color: var(--success); }
+
+  /* ─── PARSE TREE ─────────────────────────────────────────────────────────── */
+  .tree-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .tree-card h4 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #tree-canvas { width: 100%; overflow-x: auto; }
+  #tree-svg { display: block; margin: 0 auto; }
+
+  /* ─── ERROR HINT ─────────────────────────────────────────────────────────── */
+  .error-hint {
+    background: var(--warn-bg);
+    border: 1px solid rgba(240,168,48,0.3);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--warn);
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* ─── FOOTER ─────────────────────────────────────────────────────────────── */
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="badge">Theory of Automata · NUTECH</div>
+    <h1>CFG Parser — Arithmetic Expressions</h1>
+    <p class="subtitle">Context-Free Grammar parser with tokenization, rule tracing, and parse tree visualization</p>
+  </header>
+
+  <!-- GRAMMAR REFERENCE -->
+  <div class="grammar-card">
+    <h3>Grammar Rules (Unambiguous CFG)</h3>
+    <div class="rule">
+      <div class="rule-line"><span class="nt">E</span> → <span class="nt">E</span> <span class="op">+</span> <span class="nt">T</span>  |  <span class="nt">E</span> <span class="op">-</span> <span class="nt">T</span>  |  <span class="nt">T</span></div>
+      <div class="rule-line"><span class="nt">T</span> → <span class="nt">T</span> <span class="op">*</span> <span class="nt">F</span>  |  <span class="nt">T</span> <span class="op">/</span> <span class="nt">F</span>  |  <span class="nt">F</span></div>
+      <div class="rule-line"><span class="nt">F</span> → <span class="op">(</span> <span class="nt">E</span> <span class="op">)</span>  |  <span class="kw">number</span></div>
+    </div>
+    <div class="rule" style="padding-left:8px; border-left: 1px solid var(--border);">
+      <p style="font-size:12px; color:var(--muted); line-height:1.7;">
+        <strong style="color:var(--accent2)">E</strong> (Expression) handles <span style="color:var(--warn)">+ −</span> with left-associativity.<br>
+        <strong style="color:var(--success)">T</strong> (Term) handles <span style="color:var(--warn)">× ÷</span>, giving them higher precedence.<br>
+        <strong style="color:var(--warn)">F</strong> (Factor) handles atoms and grouped sub-expressions.<br>
+        Precedence: <code style="color:#aaa">( )</code> &gt; <code style="color:var(--warn)">* /</code> &gt; <code style="color:var(--warn)">+ -</code>
+      </p>
+    </div>
+  </div>
+
+  <!-- INPUT -->
+  <div class="input-card">
+    <div class="input-row">
+      <input type="text" id="expr-input" class="expr-input" placeholder="Enter an arithmetic expression, e.g. (2+4)*7" autocomplete="off" spellcheck="false" />
+      <button class="parse-btn" onclick="runParse()">Parse</button>
+      <button class="clear-btn" onclick="clearAll()">Clear</button>
+    </div>
+    <!-- TEST CASES -->
+    <div class="test-section">
+      <h3>✓ Accepted test cases</h3>
+      <div class="test-chips" id="accept-chips"></div>
+    </div>
+    <div class="test-section" style="margin-bottom:0">
+      <h3>✗ Rejected test cases</h3>
+      <div class="test-chips" id="reject-chips"></div>
+    </div>
+  </div>
+
+  <!-- RESULT PANEL -->
+  <div id="result-panel">
+    <div id="verdict-box" class="verdict"></div>
+    <div id="error-hint-box"></div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <h4><span class="step-num">1</span> Tokenization</h4>
+        <div id="token-list" class="token-list"></div>
+      </div>
+      <div class="step-card">
+        <h4><span class="step-num">2</span> Grammar rule applications</h4>
+        <ul id="rule-log" class="rule-log"></ul>
+      </div>
+    </div>
+    <div class="tree-card" id="tree-section">
+      <h4><span class="step-num">3</span> Parse tree</h4>
+      <div id="tree-canvas"><svg id="tree-svg"></svg></div>
+    </div>
+  </div>
+
+</div><!-- /wrapper -->
+
+<footer>
+  <span>CFG Parser · Theory of Automata Project · Muhammad Zain Ilyas · NUTECH 2024–2028</span>
+  <span>Recursive-Descent Parser · LL(1) Grammar</span>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 1: LEXER / TOKENIZER
+   Converts a raw expression string into a sequence of typed tokens.
+   Token types: NUM, PLUS, MINUS, TIMES, DIV, LPAREN, RPAREN, EOF, ERROR
+═══════════════════════════════════════════════════════════════════════════ */
+
+const TK = { NUM:'NUM', PLUS:'PLUS', MINUS:'MINUS', TIMES:'TIMES', DIV:'DIV', LPAREN:'LPAREN', RPAREN:'RPAREN', EOF:'EOF', ERROR:'ERROR' };
+
+function tokenize(input) {
+  const tokens = [];
+  const errors = [];
+  let i = 0;
+  const src = input.trim();
+
+  if (!src) {
+    errors.push('Expression is empty.');
+    return { tokens: [], errors };
+  }
+
+  while (i < src.length) {
+    const ch = src[i];
+    // Skip whitespace
+    if (/\s/.test(ch)) { i++; continue; }
+    // Integer number (one or more digits)
+    if (/[0-9]/.test(ch)) {
+      let num = '';
+      while (i < src.length && /[0-9]/.test(src[i])) num += src[i++];
+      tokens.push({ type: TK.NUM, value: num, pos: i - num.length });
+      continue;
+    }
+    // Operators and parentheses
+    const map = { '+': TK.PLUS, '-': TK.MINUS, '*': TK.TIMES, '/': TK.DIV, '(': TK.LPAREN, ')': TK.RPAREN };
+    if (map[ch]) {
+      tokens.push({ type: map[ch], value: ch, pos: i });
+      i++; continue;
+    }
+    // Unknown character → error token
+    errors.push(`Invalid character '${ch}' at position ${i + 1}.`);
+    tokens.push({ type: TK.ERROR, value: ch, pos: i });
+    i++;
+  }
+  tokens.push({ type: TK.EOF, value: 'EOF', pos: src.length });
+  return { tokens, errors };
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 2: CFG PARSER (Recursive-Descent)
+   Implements the grammar:
+     E  → E + T | E - T | T     (encoded iteratively to avoid left-recursion)
+     T  → T * F | T / F | F     (encoded iteratively)
+     F  → ( E ) | number
+
+   Returns:
+     { accepted: bool, ruleLog: [], tree: node, errorMsg: string }
+═══════════════════════════════════════════════════════════════════════════ */
+
+let _tokens, _pos, _log;
+
+// Helper: current token
+function peek()     { return _tokens[_pos]; }
+// Helper: consume current token and advance
+function consume()  { return _tokens[_pos++]; }
+// Helper: record a rule application
+function logRule(rule, detail) { _log.push({ rule, detail }); }
+
+// E → T { (+|-) T }*
+function parseE() {
+  let node = { label:'E', children:[] };
+  let left = parseT();
+  // If parseT failed, propagate
+  if (!left) return null;
+  node.children.push(left);
+
+  // Left-associative: absorb any number of +/- continuations
+  while (peek().type === TK.PLUS || peek().type === TK.MINUS) {
+    const op = consume();
+    logRule('E', `E → E ${op.value} T`);
+    const right = parseT();
+    if (!right) throw new Error(`Expected a term after '${op.value}' but found '${peek().value}'.`);
+    node.children.push({ label: op.value, children:[] });
+    node.children.push(right);
+  }
+  // E → T (no operator follows)
+  if (node.children.length === 1) logRule('E', 'E → T');
+  return node;
+}
+
+// T → F { (*|/) F }*
+function parseT() {
+  let node = { label:'T', children:[] };
+  let left = parseF();
+  if (!left) return null;
+  node.children.push(left);
+
+  while (peek().type === TK.TIMES || peek().type === TK.DIV) {
+    const op = consume();
+    logRule('T', `T → T ${op.value} F`);
+    const right = parseF();
+    if (!right) throw new Error(`Expected a factor after '${op.value}' but found '${peek().value}'.`);
+    node.children.push({ label: op.value, children:[] });
+    node.children.push(right);
+  }
+  if (node.children.length === 1) logRule('T', 'T → F');
+  return node;
+}
+
+// F → ( E ) | number
+function parseF() {
+  const tk = peek();
+  if (tk.type === TK.LPAREN) {
+    consume(); // consume '('
+    logRule('F', 'F → ( E )');
+    const inner = parseE();
+    if (!inner) throw new Error('Expected an expression inside parentheses.');
+    if (peek().type !== TK.RPAREN) throw new Error(`Missing closing ')' — got '${peek().value}'.`);
+    consume(); // consume ')'
+    const node = { label:'F', children:[{ label:'(', children:[] }, inner, { label:')', children:[] }] };
+    return node;
+  }
+  if (tk.type === TK.NUM) {
+    consume();
+    logRule('F', `F → number (${tk.value})`);
+    return { label: tk.value, children:[], isLeaf: true };
+  }
+  // Anything else is unexpected
+  return null;
+}
+
+function parse(tokens) {
+  _tokens = tokens;
+  _pos    = 0;
+  _log    = [];
+  let tree = null;
+  let errorMsg = '';
+
+  try {
+    tree = parseE();
+    // After parsing the full E, next token must be EOF
+    if (peek().type !== TK.EOF) {
+      // e.g. expression like "7+)" — extra token after valid parse
+      const remaining = peek();
+      throw new Error(`Unexpected '${remaining.value}' at position ${remaining.pos + 1} — expression has extra tokens.`);
+    }
+    if (!tree) throw new Error('Could not parse expression — check the grammar rules.');
+  } catch (e) {
+    return { accepted: false, ruleLog: _log, tree: null, errorMsg: e.message };
+  }
+
+  return { accepted: true, ruleLog: _log, tree, errorMsg: '' };
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 3: VALIDATION LOGIC
+   Pre-checks before handing off to the parser, to provide clearer errors.
+═══════════════════════════════════════════════════════════════════════════ */
+
+function validate(expr) {
+  const issues = [];
+  if (!expr.trim()) { issues.push('Expression is empty.'); return issues; }
+  // Consecutive operators
+  if (/[+\-*\/][+\-*\/]/.test(expr)) issues.push('Consecutive operators detected (e.g. ++, */, +-). Only one operator is allowed between operands.');
+  // Leading operator (not a sign — the grammar doesn't support unary minus)
+  if (/^[+\-*\/]/.test(expr.trim())) issues.push('Expression starts with an operator. The grammar requires a number or \'(\' at the start.');
+  // Trailing operator
+  if (/[+\-*\/]$/.test(expr.trim())) issues.push('Expression ends with an operator. Expected a number or \')\' at the end.');
+  // Unbalanced parens
+  let depth = 0;
+  for (const ch of expr) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (depth < 0) { issues.push('Unmatched \')\' found — there is no corresponding \'(\'.'); depth = 0; }
+  }
+  if (depth > 0) issues.push(`${depth} unclosed parenthes${depth > 1 ? 'es' : 'is'} — add the missing \')\'.`);
+  return issues;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 4: PARSE TREE RENDERER
+   Lays out the AST as an SVG diagram.
+═══════════════════════════════════════════════════════════════════════════ */
+
+const NODE_W = 44, NODE_H = 28, V_GAP = 48, H_GAP = 12;
+
+// Compute x-positions (Reingold-Tilford simplified)
+function layoutTree(node) {
+  if (!node.children || node.children.length === 0) {
+    node.w = NODE_W;
+    return node;
+  }
+  node.children.forEach(layoutTree);
+  const childrenW = node.children.reduce((s, c) => s + c.w, 0) + H_GAP * (node.children.length - 1);
+  node.w = Math.max(NODE_W, childrenW);
+  return node;
+}
+
+function assignPositions(node, x, y) {
+  node.x = x + node.w / 2;
+  node.y = y;
+  let cx = x;
+  (node.children || []).forEach(child => {
+    assignPositions(child, cx, y + NODE_H + V_GAP);
+    cx += child.w + H_GAP;
+  });
+}
+
+function collectNodes(node, nodesArr, edgesArr) {
+  nodesArr.push(node);
+  (node.children || []).forEach(child => {
+    edgesArr.push({ x1: node.x, y1: node.y, x2: child.x, y2: child.y });
+    collectNodes(child, nodesArr, edgesArr);
+  });
+}
+
+function nodeColor(label) {
+  if (/^\d+$/.test(label)) return { fill:'#1b2f52', stroke:'#378add', text:'#85b7eb' }; // blue: number
+  if (['+','-','*','/'].includes(label)) return { fill:'#2a1e08', stroke:'#ba7517', text:'#ef9f27' }; // amber: operator
+  if (['(', ')'].includes(label)) return { fill:'#1a1a2a', stroke:'#534ab7', text:'#afa9ec' };
+  if (label === 'E') return { fill:'#1b2a1e', stroke:'#0f6e56', text:'#5dcaa5' }; // teal: E
+  if (label === 'T') return { fill:'#1e1b2e', stroke:'#534ab7', text:'#afa9ec' }; // purple: T
+  if (label === 'F') return { fill:'#2a1a1a', stroke:'#993c1d', text:'#f0997b' }; // coral: F
+  return { fill:'#1a1a1a', stroke:'#555', text:'#aaa' };
+}
+
+function renderTree(root) {
+  layoutTree(root);
+  assignPositions(root, 0, 30);
+  const nodes = [], edges = [];
+  collectNodes(root, nodes, edges);
+  const maxX = Math.max(...nodes.map(n => n.x + NODE_W / 2));
+  const maxY = Math.max(...nodes.map(n => n.y + NODE_H));
+  const W = Math.max(400, maxX + 20);
+  const H = maxY + 40;
+
+  let svg = `<svg id="tree-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%;overflow:visible" xmlns="http://www.w3.org/2000/svg">`;
+  // Edges
+  edges.forEach(e => {
+    svg += `<line x1="${e.x1}" y1="${e.y1 + NODE_H/2}" x2="${e.x2}" y2="${e.y2 - NODE_H/2}" stroke="#2a3050" stroke-width="1.5"/>`;
+  });
+  // Nodes
+  nodes.forEach(n => {
+    const { fill, stroke, text } = nodeColor(n.label);
+    const rx = n.isLeaf ? 14 : 6;
+    svg += `<rect x="${n.x - NODE_W/2}" y="${n.y - NODE_H/2}" width="${NODE_W}" height="${NODE_H}" rx="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+    svg += `<text x="${n.x}" y="${n.y + 5}" text-anchor="middle" font-family="'Courier New',monospace" font-size="12" font-weight="600" fill="${text}">${n.label}</text>`;
+  });
+  svg += '</svg>';
+  return svg;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 5: USER INTERFACE LOGIC
+═══════════════════════════════════════════════════════════════════════════ */
+
+const ACCEPT_CASES = ['5+3', '(2+4)*7', '10/(5-3)', '8*9+2', '((1+2)*3)', '100-50/2', '(7+3)*(4-1)'];
+const REJECT_CASES = ['+5', '5++3', '(2+3', '4*/', '7+)', '', '3+()', '2**4', '(+1)'];
+
+// Populate test chips
+function initChips() {
+  ACCEPT_CASES.forEach(c => {
+    const el = document.createElement('span');
+    el.className = 'chip accept';
+    el.textContent = c || '(empty)';
+    el.onclick = () => { document.getElementById('expr-input').value = c; runParse(); };
+    document.getElementById('accept-chips').appendChild(el);
+  });
+  REJECT_CASES.forEach(c => {
+    const el = document.createElement('span');
+    el.className = 'chip reject';
+    el.textContent = c || '(empty)';
+    el.onclick = () => { document.getElementById('expr-input').value = c; runParse(); };
+    document.getElementById('reject-chips').appendChild(el);
+  });
+}
+
+function runParse() {
+  const input = document.getElementById('expr-input').value;
+  const panel = document.getElementById('result-panel');
+  panel.style.display = 'block';
+
+  // 1. Validation pre-checks
+  const validationErrors = validate(input);
+
+  // 2. Tokenize
+  const { tokens, errors: lexErrors } = tokenize(input);
+  const allErrors = [...validationErrors, ...lexErrors];
+
+  // Render tokens
+  const tokenDiv = document.getElementById('token-list');
+  tokenDiv.innerHTML = '';
+  tokens.filter(t => t.type !== TK.EOF).forEach(t => {
+    const span = document.createElement('span');
+    span.className = `token ${t.type}`;
+    span.textContent = `${t.type}(${t.value})`;
+    tokenDiv.appendChild(span);
+  });
+  if (tokens.filter(t => t.type !== TK.EOF).length === 0) {
+    tokenDiv.innerHTML = '<span style="color:var(--muted);font-size:13px;font-style:italic">No tokens — empty input</span>';
+  }
+
+  // 3. Parse (only if no pre-check errors and no lex errors)
+  let result;
+  if (allErrors.length > 0) {
+    result = { accepted: false, ruleLog: [], tree: null, errorMsg: allErrors[0] };
+  } else {
+    const validTokens = tokens.filter(t => t.type !== TK.ERROR);
+    result = parse(validTokens);
+  }
+
+  // 4. Render rule log
+  const logEl = document.getElementById('rule-log');
+  logEl.innerHTML = '';
+  if (result.ruleLog.length === 0) {
+    logEl.innerHTML = '<li style="color:var(--muted);font-style:italic;font-size:12px">No rules applied.</li>';
+  } else {
+    result.ruleLog.forEach(({ rule, detail }) => {
+      const li = document.createElement('li');
+      const tagCls = rule === 'F' ? 'F' : rule === 'T' ? 'T' : '';
+      li.innerHTML = `<span class="rule-tag ${tagCls}">${rule}</span><span>${detail}</span>`;
+      logEl.appendChild(li);
+    });
+  }
+
+  // 5. Verdict
+  const verdictBox = document.getElementById('verdict-box');
+  if (result.accepted) {
+    verdictBox.className = 'verdict accepted';
+    verdictBox.innerHTML = `<span class="verdict-icon">✓</span><div><div>Accepted</div><div class="verdict-detail">Expression belongs to the language defined by the CFG.</div></div>`;
+  } else {
+    verdictBox.className = 'verdict rejected';
+    verdictBox.innerHTML = `<span class="verdict-icon">✗</span><div><div>Rejected</div><div class="verdict-detail">Expression does not conform to the grammar.</div></div>`;
+  }
+
+  // 6. Error hint
+  const hintBox = document.getElementById('error-hint-box');
+  hintBox.innerHTML = '';
+  const msg = result.errorMsg || (allErrors[0] || '');
+  if (!result.accepted && msg) {
+    hintBox.innerHTML = `<div class="error-hint"><span>⚠</span><span>${msg}</span></div>`;
+  }
+
+  // 7. Parse tree
+  const treeSection = document.getElementById('tree-section');
+  const treeCanvas = document.getElementById('tree-canvas');
+  if (result.accepted && result.tree) {
+    treeSection.style.display = 'block';
+    treeCanvas.innerHTML = renderTree(result.tree);
+  } else {
+    treeSection.style.display = result.accepted ? 'block' : 'none';
+  }
+}
+
+function clearAll() {
+  document.getElementById('expr-input').value = '';
+  document.getElementById('result-panel').style.display = 'none';
+}
+
+// Enter key support
+document.addEventListener('DOMContentLoaded', () => {
+  initChips();
+  document.getElementById('expr-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runParse();
+  });
+});
+</script>
+</body>
+</html>
